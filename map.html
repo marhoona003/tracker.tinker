@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Maps Example with Search and Time</title>
+  <script>
+    function gm_authFailure() {
+      const mapDiv = document.getElementById('map');
+      mapDiv.innerHTML = '<div style="text-align: center; padding: 20px; color: red;">Error: Unable to load Google Maps. Please check your API key.</div>';
+    }
+  </script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCL13MJxfie3JLPVl8l0T9GC1TzQIYkEI8&libraries=places&callback=initMap" async defer></script>
+  <style>
+    /* Previous styles remain the same */
+    #map {
+      height: 400px;
+      width: 100%;
+      margin-bottom: 20px;
+    }
+    #search-container {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      padding: 10px;
+      background-color: #f5f5f5;
+      border-radius: 5px;
+    }
+    #error-message {
+      color: red;
+      margin: 10px 0;
+      padding: 10px;
+      background-color: #ffe6e6;
+      border-radius: 5px;
+      display: none;
+    }
+    #coordinates, #local-time {
+      margin-top: 10px;
+      font-weight: bold;
+      padding: 10px;
+      background-color: #e9ecef;
+      border-radius: 5px;
+    }
+    input[type="text"] {
+      padding: 8px;
+      width: 300px;
+      margin-right: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    button {
+      padding: 8px 15px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    /* New styles for popup */
+    .popup {
+      display: none;
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 15px 25px;
+      background-color: #4CAF50;
+      color: white;
+      border-radius: 5px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      animation: slideIn 0.5s, fadeOut 0.5s 2.5s forwards;
+      z-index: 1000;
+    }
+    @keyframes slideIn {
+      from {transform: translateX(100%)}
+      to {transform: translateX(0)}
+    }
+    @keyframes fadeOut {
+      from {opacity: 1}
+      to {opacity: 0}
+    }
+  </style>
+</head>
+<body>
+  <h1>My Google Map with Search and Local Time</h1>
+  
+  <div id="error-message"></div>
+  <div id="search-container">
+    <div>
+      <input id="search-input" type="text" placeholder="Enter a location">
+      <button onclick="searchLocation()">Search</button>
+    </div>
+    <button onclick="shareLocation()">Share</button>
+  </div>
+  
+  <div id="coordinates">Latitude: , Longitude: </div>
+  <div id="local-time">Local Time: </div>
+  
+  <div id="map"></div>
+  
+  <!-- Add popup notification -->
+  <div id="popup" class="popup">Location link copied!</div>
+  
+  <script>
+    // Previous variables remain the same
+    let map;
+    let marker;
+    let autocomplete;
+    let timeUpdateInterval;
+    let currentLocation = { lat: 37.7749, lng: -122.4194 }; // Add this to track current location
+
+    // Add share functionality
+    function shareLocation() {
+      try {
+        const lat = currentLocation.lat;
+        const lng = currentLocation.lng;
+        const zoom = map.getZoom();
+        const shareUrl = `https://www.google.com/maps?q=${lat},${lng}&z=${zoom}`;
+        
+        // Copy to clipboard
+        navigator.clipboard.writeText(shareUrl).then(() => {
+          // Show popup
+          const popup = document.getElementById('popup');
+          popup.style.display = 'block';
+          
+          // Hide popup after 3 seconds
+          setTimeout(() => {
+            popup.style.display = 'none';
+          }, 3000);
+        }).catch(err => {
+          showError('Failed to copy location link: ' + err.message);
+        });
+      } catch (error) {
+        showError('Error sharing location: ' + error.message);
+      }
+    }
+
+    // Modify updateMapAndInfo to track current location
+    function updateMapAndInfo(place) {
+      map.setCenter(place.geometry.location);
+      map.setZoom(15);
+      marker.setPosition(place.geometry.location);
+      
+      const lat = place.geometry.location.lat();
+      const lng = place.geometry.location.lng();
+      
+      // Update current location
+      currentLocation = { lat, lng };
+      
+      document.getElementById("coordinates").innerText =
+        `Latitude: ${lat.toFixed(4)}, Longitude: ${lng.toFixed(4)}`;
+      
+      updateLocalTime(lat, lng);
+    }
+
+    // Rest of the functions remain the same
+    function showError(message) {
+      const errorDiv = document.getElementById('error-message');
+      errorDiv.style.display = 'block';
+      errorDiv.textContent = message;
+    }
+
+    function hideError() {
+      document.getElementById('error-message').style.display = 'none';
+    }
+
+    function initMap() {
+      try {
+        if (!google || !google.maps) {
+          showError('Google Maps API failed to load. Please check your internet connection.');
+          return;
+        }
+
+        const defaultLocation = { lat: 37.7749, lng: -122.4194 };
+        currentLocation = defaultLocation; // Set initial location
+        
+        map = new google.maps.Map(document.getElementById("map"), {
+          zoom: 12,
+          center: defaultLocation,
+          gestureHandling: 'cooperative',
+          mapTypeControl: true,
+          streetViewControl: true,
+          fullscreenControl: true
+        });
+        
+        marker = new google.maps.Marker({
+          position: defaultLocation,
+          map: map,
+          title: "San Francisco, CA",
+          animation: google.maps.Animation.DROP
+        });
+        
+        const options = {
+          types: ['(cities)'],
+          fields: ['geometry', 'name', 'formatted_address']
+        };
+        
+        autocomplete = new google.maps.places.Autocomplete(
+          document.getElementById("search-input"),
+          options
+        );
+        
+        autocomplete.addListener("place_changed", handlePlaceSelection);
+        
+        updateLocalTime(defaultLocation.lat, defaultLocation.lng);
+        hideError();
+      } catch (error) {
+        showError('Error initializing map: ' + error.message);
+      }
+    }
+
+    // Previous functions remain the same
+    function handlePlaceSelection() {
+      try {
+        const place = autocomplete.getPlace();
+        if (!place.geometry) {
+          showError("No details available for this location.");
+          return;
+        }
+        
+        hideError();
+        updateMapAndInfo(place);
+      } catch (error) {
+        showError('Error handling place selection: ' + error.message);
+      }
+    }
+
+    function searchLocation() {
+      try {
+        const place = autocomplete.getPlace();
+        if (!place || !place.geometry) {
+          showError("Please select a valid location from the dropdown.");
+          return;
+        }
+        
+        hideError();
+        updateMapAndInfo(place);
+      } catch (error) {
+        showError('Error searching location: ' + error.message);
+      }
+    }
+
+    function updateLocalTime(lat, lng) {
+      if (timeUpdateInterval) {
+        clearInterval(timeUpdateInterval);
+      }
+      
+      const updateTime = () => {
+        try {
+          const timestamp = Date.now();
+          const localTime = new Date(timestamp).toLocaleString('en-US', {
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            hour12: true,
+            hour: 'numeric',
+            minute: 'numeric',
+            second: 'numeric',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          });
+          
+          document.getElementById("local-time").innerText = `Local Time: ${localTime}`;
+        } catch (error) {
+          showError('Error updating time: ' + error.message);
+        }
+      };
+      
+      updateTime();
+      timeUpdateInterval = setInterval(updateTime, 1000);
+    }
+
+    window.addEventListener('unload', () => {
+      if (timeUpdateInterval) {
+        clearInterval(timeUpdateInterval);
+      }
+    });
+  </script>
+</body>
+</html>
